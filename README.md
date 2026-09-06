@@ -1,8 +1,8 @@
 # playwright-wrapper
 
-Describe a test in plain English. Get a normal Playwright spec back.
+Describe a what you need to do on website(s) or web UI in plain English. Get a normal Playwright spec back that Playwright MCP can use deterministically
 
-The model does the slow, boring parts - finding locators on a live page, writing the first draft of a spec, fixing it after the UI moves, pulling data off a page. What you keep is stock Playwright: `npx playwright test`, in your CI, with no model anywhere near the run.
+The model does boring parts - finding locators on a live page, writing the first draft of a spec, fixing it after the UI moves, pulling data off a page. What you keep is stock Playwright: `npx playwright test`, in your CI, with no model anywhere near the run.
 
 > Runs from source. Not published to npm yet.
 
