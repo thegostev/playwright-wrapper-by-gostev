@@ -1,25 +1,29 @@
 # playwright-wrapper
 
-Write a test in plain English. Get a normal Playwright spec.
+Describe a test in plain English. Get a normal Playwright spec back.
 
-`playwright-wrapper` puts an LLM in front of Playwright for the parts that are slow and boring - finding locators on a live page, writing the first draft of a spec, fixing the spec after the UI moves, and pulling structured data off a page. Everything it produces is stock Playwright that runs with `npx playwright test`, in your CI, with no LLM anywhere near the run.
+The model does the slow, boring parts - finding locators on a live page, writing the first draft of a spec, fixing it after the UI moves, pulling data off a page. What you keep is stock Playwright: `npx playwright test`, in your CI, with no model anywhere near the run.
 
-> Pre-release. The design is settled and the build is landing ticket by ticket.
+> Runs from source. Not published to npm yet.
 
-## Why you would use it
+## Why not just the Playwright MCP?
 
-- **You stop hand-writing locators.** The wrapper opens the real page, reads its accessibility tree, and proposes locators that exist on that page - not ones a model imagined.
-- **You approve before code exists.** It shows you a plan in plain English first. You edit it, then it compiles. No surprise 200-line spec.
-- **Broken tests come back with a fix attached.** Feed it a failed CI run and it proposes new locators for the steps that broke, with a written record of what it tried.
-- **Same engine reads pages for you.** The browsing profile walks a public site, paginates, and returns structured JSON against a schema you declare.
-- **It is cheap.** Text snapshots, not screenshots - no vision model. It runs on Ollama Cloud models by default.
-- **No lock-in.** The output is a plain `.spec.ts`. Delete the wrapper tomorrow and your tests still run.
+The Playwright MCP is good for poking at a page. It is a poor place to keep a test suite, because the model stays in the loop forever - every run is a fresh improvisation that costs tokens and can go a different way.
 
-## How it fits together
+|  | Playwright MCP | this wrapper |
+| --- | --- | --- |
+| Who drives the browser at run time | the model, every run | nobody - it is compiled code |
+| Cost per run | tokens, every time | zero |
+| Same result twice | not guaranteed | yes, it is a file |
+| CI needs an API key | yes | no |
+| Your agent's context | fills up with page snapshots | untouched - own process, own model |
+| What you review | a transcript, after the fact | a plan in plain English, before code exists |
+
+This wrapper uses the Playwright MCP inside, but only while you author. Then it compiles the result and gets out of the way. It reads the accessibility tree as text, not screenshots, so there is no vision model and the default models are small and cheap.
 
 ```mermaid
 flowchart LR
-  A["spec in plain English"] --> B["plan"]
+  A["goal in plain English"] --> B["plan"]
   B --> C{"you approve"}
   C --> D["generate"]
   D --> E["stock .spec.ts"]
@@ -29,42 +33,11 @@ flowchart LR
   H --> E
 ```
 
-The LLM works in the left half only. The right half is Playwright doing what Playwright does.
+The model works on the left. The right half is Playwright doing what Playwright does.
 
-## Install
+## What you use it for
 
-Needs Node 20 or newer.
-
-```sh
-npm i -g playwright-wrapper
-```
-
-From source:
-
-```sh
-git clone https://github.com/thegostev/playwright-wrapper.git
-cd playwright-wrapper
-npm install
-npm link
-```
-
-Then set your key. All LLM config is read from the environment - never from flags, never logged.
-
-```sh
-export WRAPPER_OLLAMA_API_KEY=...   # from https://ollama.com
-```
-
-That is the only required variable. Check it worked:
-
-```sh
-playwright-wrapper --help
-```
-
-## Use it
-
-### 1. Describe the test
-
-A task spec is a short header plus a goal in your own words. Save it as `login.md`:
+Every command but `generate` takes a small spec file: a keyed header, a blank line, then the goal in your own words.
 
 ```
 profile: test
@@ -73,155 +46,98 @@ target: https://app.example.com/login
 Sign in with a valid account and land on the dashboard.
 ```
 
-### 2. Get a plan
+**1. Write a new E2E test.** The wrapper opens the real page, snapshots it, and proposes one locator per step - locators that exist on that page, not ones a model imagined.
 
 ```sh
-playwright-wrapper plan login.md > plan.md
+playwright-wrapper plan login.md > plan.md   # read it, edit what is wrong
+playwright-wrapper generate < plan.md        # writes <file>.spec.ts + <file>.plan.md
 ```
 
-The wrapper opens the target page in a real Chromium, snapshots it, and writes a step list with one locator per step:
+You approve the plan, not 200 lines of code. `generate` refuses on a dirty tree, so generated files never mix with work in progress.
 
-```
-profile: test
-title: user can sign in
-file: user-can-sign-in
-next_id: s6
----
-## steps
-
-- id: s1
-  action: go to the login page
-  locator: none
-  value: literal '/'
-- id: s2
-  action: fill the email field
-  locator: getByLabel('Email')
-  value: env:E2E_USER
-  reason: label present on the form
-- id: s3
-  action: submit the form
-  locator: getByRole('button', { name: 'Sign in' })
-  reason: role=button, name="Sign in"
-- id: s4
-  action: assert the dashboard heading is shown
-  locator: getByRole('heading', { name: 'Dashboard' })
-  expect: visible
-  reason: role=heading
-```
-
-Read it. Change what is wrong. This is the review step - the plan is the thing you approve, not the code.
-
-### 3. Compile it
-
-```sh
-playwright-wrapper generate < plan.md
-```
-
-You get two files in your `testDir`, tracked in git:
-
-- `user-can-sign-in.spec.ts` - a normal Playwright spec, first line stamped with the plan's hash
-- `user-can-sign-in.plan.md` - the exact plan bytes that produced it
-
-Generate refuses on a dirty working tree, so generated files never mix with work in progress.
-
-### 4. Run it like any other test
-
-```sh
-npx playwright test
-```
-
-Nothing wrapper-specific runs here. Your CI needs no API key and no LLM.
-
-### 5. Heal it when the UI moves
+**2. Fix a test the UI broke.** Point it at the failed run. It proposes new locators for the steps that broke and writes a `.heal.md` record of what it tried.
 
 ```sh
 playwright-wrapper heal playwright-output/<project>/<run-id>/
 ```
 
-Heal reads the failed run, proposes `{step_id, locator}` patches for the steps that broke, and writes a `.heal.md` record for every non-pass outcome. The ladder gets two tries - a fresh page snapshot, then the same snapshot plus why the first attempt failed. If the ladder is exhausted, the run escalates: with `OPENAI_API_KEY` set, one stronger last-resort attempt is made with full context (the page, why every attempt failed, and the proposals that were rejected); without it, heal stops there and hands the problem to you with what it tried. Every run ends in a machine-readable envelope naming the escalation reason and disposition.
+It refuses to patch a run from a different commit than your checkout - a fix against an app that has moved only looks successful.
 
-Heal refuses to work on a run from a different commit than your checkout - patching against an app that has moved is how a wrong fix looks successful.
-
-## Browsing and extraction
-
-Same tool, different profile. Declare what you expect back:
-
-```
-profile: browsing
-target: https://example.com/careers
-browse:
-  schema: ./roles.schema.json
-  allowEmpty: false
-  identityQuestion: is this the careers listing page?
-
-List every open role with title, location, and link.
-```
+**3. Pull structured data off a page.** Declare a JSON Schema, get rows back, plus a verdict on whether they can be trusted (schema, page identity, pagination).
 
 ```sh
-playwright-wrapper browse careers.md > roles.json
+playwright-wrapper browse careers.md > roles.json   # exit 0 pass, 1 not-pass
 ```
 
-The loop navigates, snapshots, clicks, and pages through the list until it submits its extraction. The result is an outcome envelope: the rows, plus how they were judged (schema-verified, page identity, pagination completeness) and a pass or not-pass verdict. Exit code is `0` on pass, `1` on not-pass, so it drops into a shell pipeline.
+**4. Read a page your agent cannot fetch.** Same `browse` loop: it navigates, clicks and pages through a JS-heavy site until it has the answer. No plan, no code - only a result.
 
-No plan is created for browsing - there is no code to review, only a result.
+**5. Give a coding agent browser hands without giving it your context.** `playwright-wrapper skill install` drops a Claude Code skill in `~/.claude/skills/`. The session then picks the right verb by itself, calls the bin, and reads the exit code. Page snapshots stay in the wrapper's process.
 
-## Your Playwright config
+## Setup
 
-The consumer repo owns four settings:
+### Let an agent do it
+
+Paste this into Claude Code, or any agent with a shell:
+
+```
+Set up https://github.com/thegostev/playwright-wrapper-by-gostev on this machine:
+1. Check `node -v` is 20 or newer.
+2. Clone it to ~/Developer/playwright-wrapper, then `npm install` and `npm link`.
+3. Run `npx playwright install chromium`.
+4. Ask me for my Ollama Cloud key. Write `export WRAPPER_OLLAMA_API_KEY=...` into
+   ~/.secrets/playwright-wrapper.env, chmod 600 it, and source it from my shell
+   profile. Never put the key on a command line.
+5. Run `playwright-wrapper skill install`.
+6. Verify with `playwright-wrapper --help` and report the exit code.
+Do not run `npm i -g playwright-wrapper` - that name belongs to a different package.
+```
+
+### Or by hand
+
+```sh
+git clone https://github.com/thegostev/playwright-wrapper-by-gostev.git
+cd playwright-wrapper-by-gostev
+npm install && npm link
+npx playwright install chromium
+
+export WRAPPER_OLLAMA_API_KEY=...   # get one at https://ollama.com
+playwright-wrapper --help
+```
+
+That key is the only variable you must set. Endpoint and model ids have working defaults, and you can point them at any OpenAI-compatible API - see [docs/setup-per-machine.md](docs/setup-per-machine.md) for the full table. Exit codes: `0` ok, `1` config error or not-pass, `2` usage error.
+
+The first browser run on a cold Chromium takes two to three minutes. That is a download, not a hang.
+
+### In the repo that holds the tests
 
 ```ts
-import { defineConfig } from '@playwright/test';
-
 export default defineConfig({
-  testDir: './playwright-output/my-app/specs',   // where generated specs live
+  testDir: './playwright-output/my-app/specs',   // where generated specs land
   use: { baseURL: process.env.BASE_URL },        // no hardcoded hosts
   captureGitInfo: true,                          // stamps the commit into reports
   reporter: process.env.CI ? [['json', { outputFile: 'results.json' }]] : 'list',
 });
 ```
 
-`baseURL` from env and `captureGitInfo` are what make a generated test portable and a heal run safe.
-
-## Configuration
-
-| Variable | What it does | Default |
-|---|---|---|
-| `WRAPPER_OLLAMA_API_KEY` | Ollama Cloud API key. Required. Never printed or written to disk. | - |
-| `WRAPPER_OLLAMA_BASE_URL` | OpenAI-compatible endpoint. Point it anywhere that speaks the API. | `https://ollama.com/v1` |
-| `WRAPPER_MODEL_MAIN` | Main model id | `glm-5.3-flash` |
-| `WRAPPER_MODEL_FALLBACK` | Second model, used only after a failure | `glm-5.3` |
-| `OPENAI_API_KEY` | If present, enables one stronger last-resort attempt when healing is stuck. Presence only - the value is never read into config, never logged. Without it, exhaustion goes straight to the terminal disposition. | - |
-| `WRAPPER_OPENAI_BASE_URL` | Third-tier endpoint. Point it at any OpenAI-compatible API. | `https://api.openai.com/v1` |
-| `WRAPPER_OPENAI_MODEL` | Third-tier model id | `gpt-5.6-sol` |
-
-Exit codes: `0` ok, `1` config error or a not-pass result, `2` usage error.
-
-## House rules
-
-These are the promises the tool keeps, and the reason to trust its output:
-
-- **Nothing is silently repaired.** A malformed plan or spec is refused with a line number. The wrapper never rewrites a model's broken output until it parses.
-- **The model never assigns ids.** Step ids come from the harness, are append-only, and are never reused - so a heal patch always lands on the step it was meant for.
-- **Locators are literals.** `page.locator`, raw CSS and XPath are rejected outright. Every locator is one readable, role- or label-based call.
-- **Verdicts are computed, not reported.** Pass or fail is derived from the run trace, never from the model saying it did well.
-- **CI stays dumb.** Generation, healing and browsing are local and interactive. CI runs the tests and nothing else.
+`baseURL` from the environment is what makes a generated test portable. `captureGitInfo` is what lets `heal` refuse a stale run.
 
 ## What it is not
 
-- Not a replacement for the Playwright runner or its assertions - the specs run on stock Playwright.
-- Not a hosted service. It calls an LLM API you configure; nothing is hosted here.
-- Not a scraper for sites behind logins, captchas or anti-bot walls. Public pages are the supported case.
+- **Not a replacement for the Playwright runner.** The output is a plain `.spec.ts` with normal assertions. Delete the wrapper tomorrow and your tests still run.
+- **Not an MCP server.** It is a CLI. A person or an agent calls it, reads stdout, and acts on the exit code.
+- **Not a hosted service.** It calls an LLM API that you configure. Nothing is hosted here.
+- **Not autonomous.** The plan gate is a human gate. Nothing is generated that you did not read first.
+- **Not a scraper for walled sites.** Logins, captchas and anti-bot walls are out of scope. Public pages are the supported case.
+- **Not self-repairing.** A malformed plan or spec is refused with a line number. The wrapper never quietly rewrites broken model output until it parses.
 
 ## Development
 
 ```sh
 npm install
-npm test        # node --test
+npm test     # node --test
 ```
 
-Source layout: `bin/` is the CLI and its subcommand bodies, `src/` is the engine (browser bridge, LLM client, plan grammar, browse loop, drift guard), `spike/` holds the probes that proved each design decision on real pages, `test/` is the suite.
-
-Design decisions are tracked as a [wayfinder map in Linear](https://linear.app/fyr/issue/FYR-245/llmplaywright-test-automation-wrapper-wayfinder-map).
+`bin/` is the CLI, `src/` is the engine (browser bridge, LLM client, plan grammar, browse loop, drift guard), `spike/` holds the probes that proved each design decision on a real page, `test/` is the suite.
 
 ## License
 
