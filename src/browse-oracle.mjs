@@ -256,8 +256,10 @@ function lastTraceSnapshotBefore(trace, index) {
  *
  * Fires (union) iff eligible AND
  *   - a live Next ref survives on the terminal snapshot, OR
- *   - the freshest pager parse has k < n.
- * Contradictory cues fire. Unparseable terminal evidence fails open.
+ *   - the TERMINAL snapshot's own pager parse has k < n.
+ * A pager parse from an earlier page the run already left is class evidence
+ * only — it must not veto a complete extraction made on a pager-less terminal
+ * page. Contradictory cues fire. Unparseable terminal evidence fails open.
  *
  * @returns {{fired: boolean, pagination: object|null}} — pagination is the
  *   REQUIRED-iff-fired contract block {class_evidence, terminal_evidence}.
@@ -266,10 +268,17 @@ export function paginationGate(cues) {
   const eligible = cues.pagerParses.length > 0 || cues.followedNext.length > 0;
   const liveNext = cues.lastSnapshot ? nextLinksFromSnapshot(cues.lastSnapshot) : [];
   const freshest = cues.pagerParses.length > 0 ? cues.pagerParses[cues.pagerParses.length - 1] : null;
+  // Terminal pager parse: only parses made from the terminal snapshot itself.
+  const terminalParses =
+    cues.lastSnapshotIndex === null ? [] : cues.pagerParses.filter((p) => p.i === cues.lastSnapshotIndex);
+  const terminalParse = terminalParses.length > 0 ? terminalParses[terminalParses.length - 1] : null;
   // Fail-open: with no terminal snapshot at all there is no parseable
   // terminal evidence either way — do not fire, log the diagnostic.
   const terminalParseable = cues.lastSnapshot !== null;
-  const fire = eligible && terminalParseable && (liveNext.length > 0 || (freshest !== null && freshest.k < freshest.n));
+  const fire =
+    eligible &&
+    terminalParseable &&
+    (liveNext.length > 0 || (terminalParse !== null && terminalParse.k < terminalParse.n));
 
   const pagination = {
     class_evidence: {
@@ -278,7 +287,7 @@ export function paginationGate(cues) {
     },
     terminal_evidence: {
       live_next: liveNext.map(({ ref, label }) => ({ ref, label })),
-      pager_parse: freshest ? { k: freshest.k, n: freshest.n } : null,
+      pager_parse: terminalParse ? { k: terminalParse.k, n: terminalParse.n } : null,
       parseable: terminalParseable,
     },
   };
