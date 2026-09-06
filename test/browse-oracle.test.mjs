@@ -194,6 +194,34 @@ test("paginationGate: an unclassified run stays telemetry-only; unparseable term
   assert.equal(g.pagination.terminal_evidence.parseable, false, "the diagnostic names the fail-open");
 });
 
+test("paginationGate: a stale pager from an earlier page never fires; the terminal page's own pager does", () => {
+  // The real-world shape: step 1 snapshots a page carrying "Page 1 of 50",
+  // the model clicks into a category, and the terminal snapshot is a
+  // pager-less page on which the extraction is complete. The stale parse is
+  // class evidence, not terminal evidence — the gate fails open.
+  const home = `- heading "All products" [ref=e1]\n- listitem [ref=e514]: Page 1 of 50\n- link "Travel" [ref=e3]`;
+  const category = `- heading "Travel" [ref=e1]\n- link "It's Only the Himalayas" [ref=e7]`;
+  const stale = scanCues([
+    { tool: "browser_snapshot", text: home },
+    { tool: "browser_click", ok: true, target: "e3", element: "Travel category link in sidebar" },
+    { tool: "browser_snapshot", text: category },
+  ]);
+  const staleGate = paginationGate(stale);
+  assert.equal(staleGate.fired, false, "a pager the run already left is not terminal evidence");
+  assert.deepEqual(staleGate.pagination.terminal_evidence.pager_parse, null, "the terminal page has no pager");
+  assert.deepEqual(staleGate.pagination.class_evidence.pager_parse, { k: 1, n: 50 }, "the stale parse stays in class evidence");
+
+  // The gate still protects genuinely incomplete runs: the TERMINAL snapshot
+  // itself parses k < n (the model stopped on page 1 of 2 and never left).
+  const terminal = scanCues([
+    { tool: "browser_snapshot", text: home },
+    { tool: "browser_click", ok: true, target: "e3", element: "Travel category link in sidebar" },
+    { tool: "browser_snapshot", text: snap(1, 50, false) },
+  ]);
+  assert.equal(paginationGate(terminal).fired, true, "k < n on the terminal snapshot fires");
+  assert.deepEqual(paginationGate(terminal).pagination.terminal_evidence.pager_parse, { k: 1, n: 50 });
+});
+
 test("paginationGate: pagination block carries class_evidence + terminal_evidence (required-iff shape)", () => {
   const cues = scanCues([
     { tool: "browser_snapshot", text: snap(1, 2, true) },
