@@ -1,4 +1,5 @@
-# playwright-wrapper
+<img width="1536" height="1024" alt="ChatGPT Image Sep 6, 2026, 02_19_06 PM" src="https://github.com/user-attachments/assets/8506e2b3-a13f-4b98-8524-c4e483c164ac" />
+
 
 Describe a what you need to do on website(s) or web UI in plain English. Get a normal Playwright spec back that Playwright MCP can use deterministically
 
