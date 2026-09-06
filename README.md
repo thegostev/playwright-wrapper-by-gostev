@@ -1,13 +1,14 @@
 <img width="1536" height="1024" alt="ChatGPT Image Sep 6, 2026, 02_19_06 PM" src="https://github.com/user-attachments/assets/8506e2b3-a13f-4b98-8524-c4e483c164ac" />
 
 
+
 Describe a what you need to do on website(s) or web UI in plain English. Get a normal Playwright spec back that Playwright MCP can use deterministically
 
 The model does boring parts - finding locators on a live page, writing the first draft of a spec, fixing it after the UI moves, pulling data off a page. What you keep is stock Playwright: `npx playwright test`, in your CI, with no model anywhere near the run.
 
-> Runs from source. Not published to npm yet.
+Runs from source. Not published to npm yet.
 
-## Why not just the Playwright MCP?
+# Why not just the Playwright MCP?
 
 The Playwright MCP is good for poking at a page. It is a poor place to keep a test suite, because the model stays in the loop forever - every run is a fresh improvisation that costs tokens and can go a different way.
 
@@ -36,7 +37,7 @@ flowchart LR
 
 The model works on the left. The right half is Playwright doing what Playwright does.
 
-## What you use it for
+# What to use it for
 
 Every command but `generate` takes a small spec file: a keyed header, a blank line, then the goal in your own words.
 
@@ -74,9 +75,9 @@ playwright-wrapper browse careers.md > roles.json   # exit 0 pass, 1 not-pass
 
 **5. Give a coding agent browser hands without giving it your context.** `playwright-wrapper skill install` drops a Claude Code skill in `~/.claude/skills/`. The session then picks the right verb by itself, calls the bin, and reads the exit code. Page snapshots stay in the wrapper's process.
 
-## Setup
+# Setup
 
-### Let an agent do it
+## Let an agent do it
 
 Paste this into Claude Code, or any agent with a shell:
 
@@ -93,7 +94,7 @@ Set up https://github.com/thegostev/playwright-wrapper-by-gostev on this machine
 Do not run `npm i -g playwright-wrapper` - that name belongs to a different package.
 ```
 
-### Or by hand
+## Or by hand
 
 ```sh
 git clone https://github.com/thegostev/playwright-wrapper-by-gostev.git
@@ -109,20 +110,7 @@ That key is the only variable you must set. Endpoint and model ids have working 
 
 The first browser run on a cold Chromium takes two to three minutes. That is a download, not a hang.
 
-### In the repo that holds the tests
-
-```ts
-export default defineConfig({
-  testDir: './playwright-output/my-app/specs',   // where generated specs land
-  use: { baseURL: process.env.BASE_URL },        // no hardcoded hosts
-  captureGitInfo: true,                          // stamps the commit into reports
-  reporter: process.env.CI ? [['json', { outputFile: 'results.json' }]] : 'list',
-});
-```
-
-`baseURL` from the environment is what makes a generated test portable. `captureGitInfo` is what lets `heal` refuse a stale run.
-
-## What it is not
+# What it is not
 
 - **Not a replacement for the Playwright runner.** The output is a plain `.spec.ts` with normal assertions. Delete the wrapper tomorrow and your tests still run.
 - **Not an MCP server.** It is a CLI. A person or an agent calls it, reads stdout, and acts on the exit code.
@@ -131,15 +119,6 @@ export default defineConfig({
 - **Not a scraper for walled sites.** Logins, captchas and anti-bot walls are out of scope. Public pages are the supported case.
 - **Not self-repairing.** A malformed plan or spec is refused with a line number. The wrapper never quietly rewrites broken model output until it parses.
 
-## Development
+# License
 
-```sh
-npm install
-npm test     # node --test
-```
-
-`bin/` is the CLI, `src/` is the engine (browser bridge, LLM client, plan grammar, browse loop, drift guard), `spike/` holds the probes that proved each design decision on a real page, `test/` is the suite.
-
-## License
-
-ISC
+MIT
